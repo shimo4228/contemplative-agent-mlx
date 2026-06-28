@@ -1,0 +1,59 @@
+[project]
+name = "contemplative-agent-mlx"
+version = "0.1.0"
+description = "Optional local MLX generation backend (Apple Silicon, mlx_lm.server) for contemplative-agent. Routes generation to a local MLX runtime while keeping embeddings on Ollama. On-device only — no cloud."
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Tatsuya Shimomoto"},
+]
+keywords = [
+    "contemplative-agent", "mlx", "apple-silicon", "qwen",
+    "llm-backend", "ai-agent", "local-llm",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# mlx-lm is intentionally NOT a dependency: this backend only speaks HTTP to a
+# local mlx_lm.server (started out-of-band via scripts/serve-mlx.sh through
+# `uvx --from mlx-lm`), so the package itself stays a thin requests-only shim
+# over the main repository's LLMBackend Protocol (ADR-0064, HTTP-only design).
+#
+# Floor is >=2.6.0: this backend uses the BackendResult return contract, the
+# LLMBackend.context_window property (ADR-0066), and the per-call think flag
+# (ADR-0068) — all of which landed in main AFTER the v2.6.0 tag (2026-06-20),
+# i.e. on the unreleased 2.6.0 HEAD that carries ADR-0065/0066/0068/0070. No
+# released 2.0–2.5.x has them, so they are excluded here. The supported install
+# path is an editable checkout of the main repository (see README); once main
+# cuts the first release that ships this contract, tighten this floor to that
+# version.
+dependencies = [
+    "contemplative-agent>=2.6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/shimo4228/contemplative-agent-mlx"
+Repository = "https://github.com/shimo4228/contemplative-agent-mlx"
+"Main project" = "https://github.com/shimo4228/contemplative-agent"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+
+[project.scripts]
+contemplative-agent-mlx = "contemplative_agent_mlx.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/contemplative_agent_mlx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["--strict-markers"]

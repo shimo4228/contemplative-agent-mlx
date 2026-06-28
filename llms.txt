@@ -1,0 +1,51 @@
+# contemplative-agent-mlx
+
+> Optional local MLX generation backend for
+> [contemplative-agent](https://github.com/shimo4228/contemplative-agent).
+> On Apple Silicon, installing it and running the `contemplative-agent-mlx`
+> entry point routes generation (distill, insight, rules-distill,
+> amend-constitution, post, comment, reply, dialogue) through a local
+> `mlx_lm.server` (Apple MLX runtime) instead of Ollama — ~1.8× faster and
+> ~3.4 GB lighter on the same Qwen3.5 9B weights. Embeddings continue to use
+> local `nomic-embed-text` via Ollama.
+>
+> This is a local-runtime swap, not a cloud backend: everything stays
+> on-device, so the main repository's "No cloud, no API keys in transit"
+> property is preserved. It mirrors the `contemplative-agent-cloud` add-on's
+> Protocol-injection shape without the cloud-egress trade-off.
+>
+> Intended for interactive / manual / short-lived runs only. On a 16 GB host
+> `mlx_lm.server` is unfit for the unattended scheduled agent (see ADR-0067),
+> which is why the main repository's production schedule runs on Ollama.
+
+## Core documentation
+
+- [README](README.md): requirements, install, configure, run, security posture, unattended-use caveat
+- Main project README: [contemplative-agent README](https://github.com/shimo4228/contemplative-agent/blob/main/README.md)
+
+## Configuration
+
+- **`MLX_BASE_URL`** — mlx_lm.server origin (default `http://localhost:8080`), restricted to localhost / `OLLAMA_TRUSTED_HOSTS`
+- **`MLX_MODEL`** — served model id (default `mlx-community/Qwen3.5-9B-4bit`)
+
+## Architecture
+
+- `src/contemplative_agent_mlx/backends/mlx.py`: `MlxLmBackend` — implements the `LLMBackend` Protocol against a local `mlx_lm.server` over its OpenAI `/v1/chat/completions` shape. Sends `top_p`/`top_k` for sampler parity with the Ollama path (Qwen3.5 degenerates into repetition loops at high temperature otherwise). A `format` schema is rendered into a prompt instruction (the server has no native structured-output mode). Declares `context_window=32768` — memory-bounded on the 16 GB host, not Qwen3.5-9B's 262k native window.
+- `src/contemplative_agent_mlx/cli.py`: wrapper entry point. Reads `MLX_BASE_URL` / `MLX_MODEL` from the environment, constructs `MlxLmBackend`, calls `contemplative_agent.core.llm.configure(backend=...)`, then delegates to the main `contemplative-agent` CLI. Never launches the server.
+- `scripts/serve-mlx.sh`: start a local `mlx_lm.server` (via `uvx --from mlx-lm`) with `--prompt-cache-size 2` and thinking off.
+- `scripts/run-with-mlx.sh`: on-demand lifecycle — start the server, wait for health, run `contemplative-agent-mlx`, stop the server on exit. mlx-lm is NOT a Python dependency (the backend only speaks HTTP).
+
+## Security / operational trade-off
+
+This add-on does **not** relax the "No cloud" property — generation stays
+local (a second `localhost` port served by MLX), reusing the same SSRF guard
+and output sanitizer as the Ollama path. The trade-off is operational:
+`mlx_lm.server` is unfit for unattended continuous use on 16 GB (EOS runaway,
+OOM → circuit cascade, prefill cliff, prompt-cache churn, wired-memory
+thrash). Use it for interactive / manual / short-lived runs; run the main
+repository on Ollama for the unattended schedule.
+
+## Related repositories
+
+- [contemplative-agent](https://github.com/shimo4228/contemplative-agent): the main repository that this package extends
+- [contemplative-agent-cloud](https://github.com/shimo4228/contemplative-agent-cloud): the sibling managed-LLM (cloud) add-on, same Protocol-injection shape
