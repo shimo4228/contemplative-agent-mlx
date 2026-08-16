@@ -23,16 +23,36 @@ classifiers = [
 # `uvx --from mlx-lm`), so the package itself stays a thin requests-only shim
 # over the main repository's LLMBackend Protocol (ADR-0064, HTTP-only design).
 #
-# Floor is >=2.6.0: this backend uses the BackendResult return contract, the
-# LLMBackend.context_window property (ADR-0066), and the per-call think flag
-# (ADR-0068) — all of which landed in main AFTER the v2.6.0 tag (2026-06-20),
-# i.e. on the unreleased 2.6.0 HEAD that carries ADR-0065/0066/0068/0070. No
-# released 2.0–2.5.x has them, so they are excluded here. The supported install
-# path is an editable checkout of the main repository (see README); once main
-# cuts the first release that ships this contract, tighten this floor to that
-# version.
+# Floor is >=2.10.0, and the version is chosen by the CONFORMANCE KIT rather
+# than by the Protocol surface this backend calls.
+#
+# The surface itself — the BackendResult return contract, the
+# LLMBackend.context_window property (ADR-0066), the per-call think flag
+# (ADR-0068) — first shipped in v2.7.0. A floor of >=2.7.0 would therefore be
+# enough to make this package IMPORT and RUN.
+#
+# It is not enough to make it VERIFIABLE. ADR-0088 moved the LLMBackend
+# conformance kit into main's shipped package (src/contemplative_agent/testing/,
+# first released in v2.10.0) precisely so siblings can check themselves against
+# the contract instead of hand-copying assertions:
+#
+#     python -m contemplative_agent.testing \
+#       --backend contemplative_agent_mlx.backends.mlx:MlxLmBackend \
+#       --kwarg base_url=http://localhost:8080 --kwarg model=conformance-probe
+#
+# (the kwargs are required — the constructor takes no defaults; main's
+# scripts/check-sibling-backends.sh carries the same pair)
+#
+# Against 2.7.x–2.9.x that command fails with "no module named …testing" — the
+# install looks healthy while the one check that proves the contract holds is
+# missing. Pinning to the release that carries the kit keeps "installed" and
+# "checkable" the same state.
+#
+# Verified 2026-08-16 against main v2.10.0: ConformanceReport ok, level=static
+# (count_tokens.signature skipped as capability_absent). The runtime level needs
+# a BackendProbe implementation here and is a separate task.
 dependencies = [
-    "contemplative-agent>=2.6.0",
+    "contemplative-agent>=2.10.0",
 ]
 
 [project.urls]
