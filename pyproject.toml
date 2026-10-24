@@ -2,7 +2,7 @@
 name = "contemplative-agent-mlx"
 version = "0.1.0"
 description = "Optional local MLX generation backend (Apple Silicon, mlx_lm.server) for contemplative-agent. Routes generation to a local MLX runtime while keeping embeddings on Ollama. On-device only — no cloud."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Tatsuya Shimomoto"},
