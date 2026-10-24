@@ -22,11 +22,15 @@ later posts to Moltbook with `run` is a separate step, described under
 [contemplative-agent-cloud](https://github.com/shimo4228/contemplative-agent-cloud),
 this is a **local-runtime swap, not a cloud backend**, so the main
 repository's local-only property (no cloud LLM, no LLM API key) is preserved.
-In the author's benchmark on an M1 Mac with 16 GB
+In the author's benchmark on an M1 Mac with 16 GB, measured in June 2026
 ([ADR-0064](https://github.com/shimo4228/contemplative-agent/blob/main/docs/adr/0064-mlx-generation-backend.md),
 with the raw measurements linked there), `mlx_lm.server` generated about
 **1.8× faster and used ~3.4 GB less memory** than Ollama serving the same
-Qwen3.5 9B model (MLX 4-bit against GGUF Q4_K_M, so not byte-identical).
+Qwen3.5 9B model (the control; MLX 4-bit against GGUF Q4_K_M, so not
+byte-identical). That model is no longer the production one: the core has run
+on `gemma4:e4b` since 2026-06-28 (ADR-0069), and running through MLX changes
+the generation model, so the figures do not transfer to the core's current
+default.
 
 Other work by the author is listed under [More from the author](#more-from-the-author).
 
@@ -77,7 +81,7 @@ the main repository runs exactly as before.
   `scripts/run-with-mlx.sh` uses that binary instead; `scripts/serve-mlx.sh`
   always runs `uvx`.
 - Network access on the first server start: `mlx_lm.server` downloads the
-  `mlx-community/Qwen3.5-9B-4bit` weights (several GB) from Hugging Face once
+  weights of `MLX_MODEL` (several GB; see Configure) from Hugging Face once
   and reuses the cached copy afterwards.
 
 No LLM API key is involved. The agent still needs its own Moltbook API key to
@@ -107,7 +111,7 @@ registering on Moltbook and the autonomy levels.
 ## Configure
 
 ```bash
-# Served model id, read by the scripts and the CLI (default: mlx-community/Qwen3.5-9B-4bit)
+# Served model id, read by the scripts and the CLI. The default is the build the benchmark above measured, not the core's production model
 export MLX_MODEL=mlx-community/Qwen3.5-9B-4bit
 
 # Port the bundled scripts start the server on (default: 8080)
@@ -132,7 +136,8 @@ on the same port. In programmatic use, the `base_url` you pass to
 `scripts/run-with-mlx.sh` starts `mlx_lm.server`, waits for it to be healthy,
 runs the agent through `contemplative-agent-mlx`, then stops the server on
 exit (idle memory returns to ~0). The server log goes to
-`~/.config/moltbook/logs/mlx-server.log`.
+`$MOLTBOOK_HOME/logs/mlx-server.log` (`~/.config/moltbook/logs/` when unset),
+created owner-only (mode 0600).
 
 To see it work without a Moltbook account, run the core's two-agent dialogue
 demo through the wrapper. Nothing goes to Moltbook; the two agents talk
@@ -158,7 +163,7 @@ scripts/run-with-mlx.sh distill --days 1
 
 ```bash
 # Terminal 1: start the MLX server (foreground)
-scripts/serve-mlx.sh            # defaults: port 8080, Qwen3.5-9B-4bit
+scripts/serve-mlx.sh            # defaults: port 8080, MLX_MODEL's default
 
 # Terminal 2: run any subcommand, swapping the binary name
 contemplative-agent-mlx init
@@ -170,6 +175,13 @@ contemplative-agent-mlx dialogue ~/dialogue/a ~/dialogue/b --seed "..." --turns 
 Any `contemplative-agent` subcommand works. Swap the command name from
 `contemplative-agent` to `contemplative-agent-mlx`. All generation routes
 through the local MLX server; Ollama is still contacted for embeddings.
+
+`run` also needs Ollama for its feed relevance check: that check always asks
+an Ollama model (`DECISION_MODEL`, unset = `OLLAMA_MODEL`, default
+`gemma4:e4b`), never the MLX server. With `DECISION_MODEL=` empty, `run`
+engages with no posts. Under this wrapper the judging model is loaded and
+unloaded once per batch (about 7 s for gemma, an accepted cost: ADR-0112
+addendum of 2026-10-24 in the core).
 
 ## Thinking is OFF
 
@@ -190,12 +202,23 @@ from contemplative_agent_mlx import MlxLmBackend
 
 configure(backend=MlxLmBackend(
     base_url="http://localhost:8080",
-    model="mlx-community/Qwen3.5-9B-4bit",
+    model="<the model id your mlx_lm.server serves>",
 ))
 
 # From this point on, every `contemplative_agent.core.llm.generate()` call
 # runs through the local mlx_lm.server, whichever subcommand or adapter
 # triggered it. Reset with `reset_llm_config()`.
+```
+
+## Verified against the core
+
+Verified against contemplative-agent main `v2.13.0-41-gaec9d8a` (conformance
+kit level static) on 2026-10-24. This is the core's release gate output
+(`scripts/check-sibling-backends.sh`), pasted as printed; refresh it at each
+release:
+
+```
+[sibling] ok contemplative_agent_mlx.backends.mlx:MlxLmBackend sha=eb76250 main=v2.13.0-41-gaec9d8a level=static kit=2
 ```
 
 ## More from the author
@@ -218,9 +241,9 @@ It exists because MLX was faster on the author's 16 GB M1 but proved unreliable 
 
 ADR-0067 records four failure modes on the 16 GB host under sustained load, where every request carries the same system prefix of roughly 7.5k to 7.6k tokens. OOM to circuit cascade: under memory pressure a generation fails, and repeated failures trip the core's circuit breaker (after 5 consecutive failures it stops sending requests for 120 s) while the loop keeps spinning. Prefill cliff: prefill is the model reading the prompt before its first output token; one request of that size (~7.5k tokens as counted in `mlx-server.log`) prefilled in ~72 s and later took tens of minutes in the same process. Prompt-cache churn: the bundled scripts start the server with `--prompt-cache-size 2` to bound cache memory, so the server keeps at most two cached prompts; as the reply, comment, score and internal-note prompts rotate behind the shared prefix, they push out the cached entries that held it, and most generations pay a full cold prefill. Wired-memory thrash: MLX's Metal (wired, non-pageable) memory coexists worse with other apps than Ollama's pageable GGUF mmap, despite a smaller resident size.
 
-Canonical facts: MIT license; Python 3.10 or later, built with hatchling; depends only on `contemplative-agent>=2.10.0` (the release that ships the core's backend conformance kit); `mlx-lm` is deliberately not a Python dependency, because the backend only speaks HTTP to a server started by `scripts/serve-mlx.sh` or `scripts/run-with-mlx.sh` through `uvx --from mlx-lm`. Maintained by hand by one author (@shimo4228), separately from the core; it is not a frozen record. Neither package is on PyPI, so both are installed from source into one `.venv` inside this repository. Requirements: an Apple Silicon Mac, uv, Ollama on `localhost:11434` for embeddings, and a one-time download of the model weights from Hugging Face; no LLM API key (the agent's own Moltbook API key comes from the core's `register` step). Configuration: `MLX_BASE_URL` (default `http://localhost:8080`, restricted to localhost or `OLLAMA_TRUSTED_HOSTS`; the lifecycle wrapper sets it from `MLX_PORT`), `MLX_PORT` (default `8080`, read by the scripts) and `MLX_MODEL` (default `mlx-community/Qwen3.5-9B-4bit`). The backend declares a 32,768-token context window, bounded by memory on the 16 GB host (the agent's shared system prefix is about 7.6k tokens of it), and runs with thinking off (in-process `mlx_lm.generate` terminates correctly with thinking on, but using it would re-add the `mlx-lm` dependency, against the HTTP-only design). Status: for interactive, manual, short-lived runs only, not for unattended continuous use on 16 GB.
+Canonical facts: MIT license; Python 3.10 or later, built with hatchling; depends only on `contemplative-agent>=2.10.0` (the release that ships the core's backend conformance kit); `mlx-lm` is deliberately not a Python dependency, because the backend only speaks HTTP to a server started by `scripts/serve-mlx.sh` or `scripts/run-with-mlx.sh` through `uvx --from mlx-lm`. Maintained by hand by one author (@shimo4228), separately from the core; it is not a frozen record. Neither package is on PyPI, so both are installed from source into one `.venv` inside this repository. Requirements: an Apple Silicon Mac, uv, Ollama on `localhost:11434` for embeddings, and a one-time download of the model weights from Hugging Face; no LLM API key (the agent's own Moltbook API key comes from the core's `register` step). Configuration: `MLX_BASE_URL` (default `http://localhost:8080`, restricted to localhost or `OLLAMA_TRUSTED_HOSTS`; the lifecycle wrapper sets it from `MLX_PORT`), `MLX_PORT` (default `8080`, read by the scripts) and `MLX_MODEL` (default: see Configure). The backend declares a 32,768-token context window, bounded by memory on the 16 GB host (the agent's shared system prefix is about 7.6k tokens of it), and runs with thinking off (in-process `mlx_lm.generate` terminates correctly with thinking on, but using it would re-add the `mlx-lm` dependency, against the HTTP-only design). Status: for interactive, manual, short-lived runs only, not for unattended continuous use on 16 GB.
 
-Example: `scripts/run-with-mlx.sh distill --days 1` starts `mlx_lm.server` with `--prompt-cache-size 2`, waits for `/health`, checks that the server serves the expected model id, runs `contemplative-agent-mlx distill --days 1`, and stops the server on exit. In the core's ADR-0064 benchmark (M1, 16 GB, same Qwen3.5 9B weights, thinking off), `mlx_lm.server` generated 12.1 to 12.7 tokens per second against Ollama's 6.8 to 7.0, with 5.2 GB resident memory against 8.6 GB. Conformance with the core's contract was checked on 2026-08-16 against core v2.10.0 with `python -m contemplative_agent.testing --backend contemplative_agent_mlx.backends.mlx:MlxLmBackend --kwarg base_url=http://localhost:8080 --kwarg model=conformance-probe` (static level, ok).
+Example: `scripts/run-with-mlx.sh distill --days 1` starts `mlx_lm.server` with `--prompt-cache-size 2`, waits for `/health`, checks that the server serves the expected model id, runs `contemplative-agent-mlx distill --days 1`, and stops the server on exit. In the core's ADR-0064 benchmark (M1, 16 GB, the Ollama control on the same model, June 2026, thinking off), `mlx_lm.server` generated 12.1 to 12.7 tokens per second against Ollama's 6.8 to 7.0, with 5.2 GB resident memory against 8.6 GB. Conformance with the core's contract was last checked on 2026-10-24 (see "Verified against the core") with `python -m contemplative_agent.testing --backend contemplative_agent_mlx.backends.mlx:MlxLmBackend --kwarg base_url=http://localhost:8080 --kwarg model=conformance-probe` (static level, ok).
 
 Links: [llms.txt](llms.txt) is the machine-readable summary. The parent project is [contemplative-agent](https://github.com/shimo4228/contemplative-agent), concept DOI [10.5281/zenodo.19212118](https://doi.org/10.5281/zenodo.19212118); cite that DOI for the framework. The decisions behind this package are the core's [ADR-0064](https://github.com/shimo4228/contemplative-agent/blob/main/docs/adr/0064-mlx-generation-backend.md), [ADR-0067](https://github.com/shimo4228/contemplative-agent/blob/main/docs/adr/0067-keep-ollama-for-unattended-production.md) and [ADR-0070](https://github.com/shimo4228/contemplative-agent/blob/main/docs/adr/0070-retire-mlx-to-sibling-repo-and-remove-docker.md). Sibling add-ons: [contemplative-agent-cloud](https://github.com/shimo4228/contemplative-agent-cloud) (Claude or OpenAI generation) and [contemplative-agent-otel](https://github.com/shimo4228/contemplative-agent-otel) (offline audit-log to OpenTelemetry converter).
 

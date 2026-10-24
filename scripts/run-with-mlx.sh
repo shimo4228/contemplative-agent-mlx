@@ -33,10 +33,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 AGENT="$REPO_ROOT/.venv/bin/contemplative-agent-mlx"
 PYTHON="$REPO_ROOT/.venv/bin/python"
-LOG="$HOME/.config/moltbook/logs/mlx-server.log"
+# The server log lives under MOLTBOOK_HOME like the core's other logs (a test
+# or a second agent home must not write into the production directory), and is
+# created owner-only: it can carry prompt text at DEBUG verbosity. umask is
+# set in a subshell so it does not narrow the permissions of the model cache
+# the server downloads into.
+LOG="${MOLTBOOK_HOME:-$HOME/.config/moltbook}/logs/mlx-server.log"
 STARTED_MLX=
 
-mkdir -p "$(dirname "$LOG")"
+(umask 077 && mkdir -p "$(dirname "$LOG")" && touch "$LOG")
+chmod 600 "$LOG"
 
 if [ ! -x "$AGENT" ]; then
   echo "run-with-mlx: executable not found: $AGENT" >&2

@@ -5,10 +5,14 @@
 > On Apple Silicon, installing it and running the `contemplative-agent-mlx`
 > entry point routes all generation (any `contemplative-agent` subcommand,
 > e.g. distill, insight, run, dialogue) through a local
-> `mlx_lm.server` (Apple MLX runtime) instead of Ollama — ~1.8× faster and
-> ~3.4 GB lighter on the same Qwen3.5 9B model (MLX 4-bit vs GGUF Q4_K_M, so
-> not byte-identical; author's M1 16 GB benchmark, ADR-0064). Embeddings
-> continue to use local `nomic-embed-text` via Ollama.
+> `mlx_lm.server` (Apple MLX runtime) instead of Ollama — in the author's
+> June 2026 M1 16 GB benchmark (ADR-0064) ~1.8× faster and ~3.4 GB lighter than
+> Ollama on the same model, the control (MLX 4-bit vs GGUF Q4_K_M, so not
+> byte-identical). The core's production model is `gemma4:e4b` (since
+> 2026-06-28, ADR-0069); running through MLX changes the generation model, so
+> those figures do not transfer to it. Embeddings continue to use local
+> `nomic-embed-text` via Ollama; `run`'s feed relevance check always asks an
+> Ollama model (`DECISION_MODEL`, unset = `OLLAMA_MODEL`), never the MLX server.
 >
 > This is a local-runtime swap, not a cloud backend: generation stays
 > on-device, so the main repository's local-only property (no cloud LLM,
@@ -21,6 +25,8 @@
 >
 > Status: maintained by hand by one author, separately from the core; not a
 > frozen record.
+>
+> Verified against contemplative-agent main `v2.13.0-41-gaec9d8a` (kit level static, kit=2, `sha=eb76250`) on 2026-10-24; gate line in README.md, "Verified against the core".
 
 ## Core documentation
 
@@ -30,12 +36,12 @@
 ## Configuration
 
 - **`MLX_BASE_URL`** — mlx_lm.server origin (default `http://localhost:8080`), restricted to localhost / `OLLAMA_TRUSTED_HOSTS`
-- **`MLX_MODEL`** — served model id (default `mlx-community/Qwen3.5-9B-4bit`)
+- **`MLX_MODEL`** — served model id (default: see README, Configure)
 - **`MLX_PORT`** — port the bundled scripts start the server on (default `8080`); `scripts/run-with-mlx.sh` sets `MLX_BASE_URL=http://localhost:$MLX_PORT` for the agent
 
 ## Architecture
 
-- `src/contemplative_agent_mlx/backends/mlx.py`: `MlxLmBackend` — implements the `LLMBackend` Protocol against a local `mlx_lm.server` over its OpenAI `/v1/chat/completions` shape. Sends `top_p`/`top_k` for sampler parity with the Ollama path (Qwen3.5 degenerates into repetition loops at high temperature otherwise). A `format` schema is rendered into a prompt instruction (the server has no native structured-output mode). Declares `context_window=32768` — memory-bounded on the 16 GB host, not Qwen3.5-9B's 262k native window.
+- `src/contemplative_agent_mlx/backends/mlx.py`: `MlxLmBackend` — implements the `LLMBackend` Protocol against a local `mlx_lm.server` over its OpenAI `/v1/chat/completions` shape. Sends `top_p`/`top_k` for sampler parity with the Ollama path (the default Qwen3.5 build degenerates into repetition loops at high temperature otherwise). A `format` schema is rendered into a prompt instruction (the server has no native structured-output mode). Declares `context_window=32768` — memory-bounded on the 16 GB host, not the default model's 262k native window.
 - `src/contemplative_agent_mlx/cli.py`: wrapper entry point. Reads `MLX_BASE_URL` / `MLX_MODEL` from the environment, constructs `MlxLmBackend`, calls `contemplative_agent.core.llm.configure(backend=...)`, then delegates to the main `contemplative-agent` CLI. Never launches the server.
 - `scripts/serve-mlx.sh`: start a local `mlx_lm.server` (via `uvx --from mlx-lm`) with `--prompt-cache-size 2` and thinking off.
 - `scripts/run-with-mlx.sh`: on-demand lifecycle — start the server (or reuse one already running), wait for health, check it serves the expected model id, run `contemplative-agent-mlx`, stop the server on exit. mlx-lm is NOT a Python dependency (the backend only speaks HTTP).
