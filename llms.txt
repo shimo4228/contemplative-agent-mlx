@@ -23,8 +23,8 @@
 > `mlx_lm.server` is unfit for the unattended scheduled agent (see ADR-0067),
 > which is why the main repository's production schedule runs on Ollama.
 >
-> Status: maintained by hand by one author, separately from the core; not a
-> frozen record.
+> Status: Frozen as of contemplative-agent v2.13.0 (kit static PASS 2026-10-24).
+> Revisit when the ADR-0067 reversal thresholds are met.
 >
 > Verified against contemplative-agent main `v2.13.0-41-gaec9d8a` (kit level static, kit=2, `sha=eb76250`) on 2026-10-24; gate line in README.md, "Verified against the core".
 
