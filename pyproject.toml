@@ -48,8 +48,9 @@ classifiers = [
 # missing. Pinning to the release that carries the kit keeps "installed" and
 # "checkable" the same state.
 #
-# Verified 2026-08-16 against main v2.10.0: ConformanceReport ok, level=static
-# (count_tokens.signature skipped as capability_absent). The runtime level needs
+# Last verified 2026-10-24 against main v2.13.0-41-gaec9d8a: level=static kit=2
+# (gate line pasted in README.md, "Verified against the core"; earlier:
+# 2026-08-16 against v2.10.0, count_tokens.signature skipped as capability_absent). The runtime level needs
 # a BackendProbe implementation here and is a separate task.
 dependencies = [
     "contemplative-agent>=2.10.0",

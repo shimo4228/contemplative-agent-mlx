@@ -1,9 +1,9 @@
 """MLX generation backend: route ``generate()`` through a local mlx_lm.server.
 
 On Apple Silicon, mlx_lm.server (Apple's MLX runtime) generates ~1.8x faster
-and at ~3.4 GB less resident memory than Ollama for the same Qwen3.5 9B
-weights (evidence: the main repository's ``docs/evidence/adr-0064/``). This
-backend speaks the OpenAI ``/v1/chat/completions`` shape mlx_lm.server exposes
+and at ~3.4 GB less resident memory than the Ollama control on the same
+model, measured June 2026 (evidence: the main repository's
+``docs/evidence/adr-0064/``). This backend speaks the OpenAI ``/v1/chat/completions`` shape mlx_lm.server exposes
 and returns a :class:`~contemplative_agent.core.llm.BackendResult` that the
 core ``generate()`` path sanitizes, truncation-gates, and circuit-breaks
 uniformly with the Ollama path.
