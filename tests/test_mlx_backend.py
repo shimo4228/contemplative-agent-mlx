@@ -21,7 +21,7 @@ from contemplative_agent.core.llm import (
     SAMPLING_TOP_K,
     BackendResult,
     LLMBackend,
-    _circuit,
+    circuit_reading,
     configure,
     generate,
     reset_llm_config,
@@ -373,14 +373,14 @@ class TestIntegrationThroughCore:
         )
         configure(backend=MlxLmBackend(base_url=_BASE_URL, model=_MODEL))
         generate("p", system="s", drop_truncated=True)
-        assert _circuit._consecutive_failures == 0
+        assert circuit_reading().consecutive_failures == 0
 
     @patch("contemplative_agent_mlx.backends.mlx.requests.post")
     def test_http_failure_records_circuit_failure(self, mock_post):
         mock_post.side_effect = requests.ConnectionError("server down")
         configure(backend=MlxLmBackend(base_url=_BASE_URL, model=_MODEL))
         assert generate("p", system="s") is None
-        assert _circuit._consecutive_failures == 1
+        assert circuit_reading().consecutive_failures == 1
 
     @patch("contemplative_agent_mlx.backends.mlx.requests.post")
     def test_over_budget_skips_before_request(self, mock_post):

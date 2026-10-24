@@ -45,7 +45,7 @@ _JSON_INSTRUCTION = (
     "Emit no prose and no markdown fences — just the JSON:\n{schema}"
 )
 
-# Same connect/read budget as the Ollama path (``core.llm._post_ollama``):
+# Same connect/read budget as the Ollama path (``core.llm.ollama.OllamaBackend.generate``):
 # a cold M1 prefill can run for minutes, so the read timeout is generous.
 _TIMEOUT = (30, 1200)
 
